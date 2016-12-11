@@ -1,6 +1,6 @@
 from keras.models import Model
 from keras.layers.core import Activation, Flatten, Dropout, Activation
-from keras.layers.convolutional import Convolution2D
+from keras.layers.convolutional import Convolution2D, Deconvolution2D
 from keras.layers.pooling import AveragePooling2D
 from keras.layers import Input, merge
 from keras.layers.normalization import BatchNormalization
@@ -77,22 +77,30 @@ def transition_down_block(ip, nb_filter, compression=1.0, dropout_rate=None, wei
     return x
 
 
-def transition_up_block(ip, nb_filters, weight_decay=1E-4):
+def transition_up_block(ip, nb_filters, type='subpixel', output_shape=None, weight_decay=1E-4):
     ''' SubpixelConvolutional Upscaling (factor = 2)
 
     Args:
         ip: keras tensor
-        nb_layers: number of layers
+        nb_filters: number of layers
+        type: can be 'subpixel' or 'deconv'. Determines type of upsampling performed
+        output_shape: required if type = 'deconv'. Output shape of tensor
         weight_decay: weight decay factor
 
     Returns: keras tensor, after applying batch_norm, relu-conv, dropout, maxpool
 
     '''
 
-    x = Convolution2D(nb_filters, 3, 3, activation="relu", border_mode='same', W_regularizer=l2(weight_decay),
-                      bias=False)(ip)
-    x = SubPixelUpscaling(r=2, channels=int(nb_filters // 4))(x)
-    x = Convolution2D(nb_filters, 3, 3, activation="relu", border_mode='same', W_regularizer=l2(weight_decay), bias=False)(x)
+    if type == 'subpixel':
+        x = Convolution2D(nb_filters, 3, 3, activation="relu", border_mode='same', W_regularizer=l2(weight_decay),
+                        bias=False)(ip)
+        x = SubPixelUpscaling(r=2, channels=int(nb_filters // 4))(x)
+        x = Convolution2D(nb_filters, 3, 3, activation="relu", border_mode='same', W_regularizer=l2(weight_decay),
+                          bias=False)(x)
+
+    else:
+        x = Deconvolution2D(nb_filters, 3, 3, output_shape, activation='relu', border_mode='same',
+                            subsample=(2, 2))(ip)
 
     return x
 
@@ -127,7 +135,8 @@ def dense_block(x, nb_layers, nb_filter, growth_rate, bottleneck=False, dropout_
 
 
 def create_fc_dense_net(img_dim, nb_dense_block=5, growth_rate=12, nb_filter=16, nb_layers=4, upsampling_conv=128,
-                        bottleneck=False, reduction=0.0, dropout_rate=None, weight_decay=1E-4, verbose=True):
+                        bottleneck=False, reduction=0.0, dropout_rate=None, weight_decay=1E-4, upscaling_type='subpixel',
+                        verbose=True):
     ''' Build the create_dense_net model
 
     Args:
@@ -150,15 +159,31 @@ def create_fc_dense_net(img_dim, nb_dense_block=5, growth_rate=12, nb_filter=16,
         reduction: reduction factor of transition blocks. Note : reduction value is inverted to compute compression
         dropout_rate: dropout rate
         weight_decay: weight decay
+        upscaling_type: method of upscaling. Can be 'subpixel' or 'deconv'
         verbose: print the model type
 
     Returns: keras tensor with nb_layers of conv_block appended
 
     '''
+    if K.backend() == 'tensorflow' and upscaling_type == 'deconv':
+        assert len(img_dim) == 4, "If using tensorflow backend with deconvolution type upscaling, \n" \
+                                  "then batch size must also be provided in img_dim as it is required for computing \n" \
+                                  "output shape of the deconvolution layer"
+
+        batch_size = img_dim[0]
+        img_dim = img_dim[1:]
+
+    else:
+        batch_size = None
 
     model_input = Input(shape=img_dim)
 
     concat_axis = 1 if K.image_dim_ordering() == "th" else -1
+
+    if concat_axis == 1: # th dim ordering
+        _, rows, cols = img_dim
+    else:
+        rows, cols, _ = img_dim
 
     if reduction != 0.0:
         assert reduction <= 1.0 and reduction > 0.0, "reduction value must lie between 0.0 and 1.0"
@@ -168,6 +193,9 @@ def create_fc_dense_net(img_dim, nb_dense_block=5, growth_rate=12, nb_filter=16,
     assert upsampling_conv > 12 and upsampling_conv % 4 == 0, "upsampling_conv number of channels must " \
                                                              "be a positive number divisible by 4 and greater " \
                                                               "than 12"
+
+    assert upscaling_type.lower() in ['subpixel', 'deconv'], "upscaling_type must be either 'subpixel' or " \
+                                                             "'deconv'"
 
     # layers in each dense block
     if type(nb_layers) is list or type(nb_layers) is tuple:
@@ -221,9 +249,21 @@ def create_fc_dense_net(img_dim, nb_dense_block=5, growth_rate=12, nb_filter=16,
     x, nb_filter = dense_block(x, final_nb_layer, nb_filter, growth_rate, bottleneck=bottleneck,
                                dropout_rate=dropout_rate, weight_decay=weight_decay)
 
+    if K.image_dim_ordering() == 'th':
+        out_shape = [batch_size, nb_filter, rows // 16, cols // 16]
+    else:
+        out_shape = [batch_size, rows // 16, cols // 16, nb_filter]
+
     # Add dense blocks and transition up block
     for block_idx in range(nb_dense_block):
-        x = transition_up_block(x, nb_filters=upsampling_conv)
+        x = transition_up_block(x, nb_filters=upsampling_conv, type=upscaling_type, output_shape=out_shape)
+
+        if K.image_dim_ordering() == 'th':
+            out_shape[2] *= 2
+            out_shape[3] *= 2
+        else:
+            out_shape[1] *= 2
+            out_shape[2] *= 2
 
         x = merge([x, skip_list.pop()], mode='concat', concat_axis=concat_axis)
 
@@ -263,8 +303,9 @@ def create_fc_dense_net(img_dim, nb_dense_block=5, growth_rate=12, nb_filter=16,
 if __name__ == '__main__':
     from keras.utils.visualize_util import plot
 
-    # model = create_fc_dense_net((3, 224, 224), upsampling_conv=8)
-    # model.summary()
+    model = create_fc_dense_net(img_dim=(3, 224, 224), nb_dense_block=5, growth_rate=12,
+                                nb_filter=16, nb_layers=4)
+    model.summary()
     # plot(model, to_file='FC-DenseNet-56.png', show_shapes=False, show_layer_names=False)
 
     # print('\n\n\n\n\n\n\n\n\n')

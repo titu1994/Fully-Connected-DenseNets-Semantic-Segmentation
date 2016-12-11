@@ -134,12 +134,13 @@ def dense_block(x, nb_layers, nb_filter, growth_rate, bottleneck=False, dropout_
     return x, nb_filter
 
 
-def create_fc_dense_net(img_dim, nb_dense_block=5, growth_rate=12, nb_filter=16, nb_layers=4, upsampling_conv=128,
+def create_fc_dense_net(nb_classes, img_dim, nb_dense_block=5, growth_rate=12, nb_filter=16, nb_layers=4, upsampling_conv=128,
                         bottleneck=False, reduction=0.0, dropout_rate=None, weight_decay=1E-4, upscaling_type='subpixel',
                         verbose=True):
     ''' Build the create_dense_net model
 
     Args:
+        nb_classes: Number of classes
         img_dim: tuple of shape (channels, rows, columns) or (rows, columns, channels)
         depth: number or layers
         nb_dense_block: number of dense blocks to add to end (generally = 3)
@@ -270,7 +271,7 @@ def create_fc_dense_net(img_dim, nb_dense_block=5, growth_rate=12, nb_filter=16,
         x, nb_filter = dense_block(x, nb_layers[-block_idx], nb_filter, growth_rate, bottleneck=bottleneck,
                                    dropout_rate=dropout_rate, weight_decay=weight_decay)
 
-    x = Convolution2D(256, 1, 1, activation='linear', border_mode='same', W_regularizer=l2(weight_decay),
+    x = Convolution2D(nb_classes, 1, 1, activation='linear', border_mode='same', W_regularizer=l2(weight_decay),
                       bias=False)(x)
 
     x = Flatten()(x)
@@ -303,7 +304,7 @@ def create_fc_dense_net(img_dim, nb_dense_block=5, growth_rate=12, nb_filter=16,
 if __name__ == '__main__':
     from keras.utils.visualize_util import plot
 
-    model = create_fc_dense_net(img_dim=(3, 224, 224), nb_dense_block=5, growth_rate=12,
+    model = create_fc_dense_net(nb_classes=10, img_dim=(3, 224, 224), nb_dense_block=5, growth_rate=12,
                                 nb_filter=16, nb_layers=4)
     model.summary()
     # plot(model, to_file='FC-DenseNet-56.png', show_shapes=False, show_layer_names=False)

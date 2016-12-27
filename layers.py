@@ -45,7 +45,7 @@ def depth_to_scale_tf(input, scale, channels):
         return tf.reshape(X, (bsize, a * r, b * r, 1))
 
     if channels > 1:
-        Xc = tf.split(3, 3, input)
+        Xc = tf.split(3, channels, input)
         X = tf.concat(3, [_phase_shift(x, scale) for x in Xc])
     else:
         X = _phase_shift(input, scale)

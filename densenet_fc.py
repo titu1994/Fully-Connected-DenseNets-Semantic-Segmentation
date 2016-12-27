@@ -1,5 +1,5 @@
 from keras.models import Model
-from keras.layers.core import Activation, Flatten, Dropout, Activation, Reshape
+from keras.layers.core import Activation, Dropout, Activation, Reshape
 from keras.layers.convolutional import Convolution2D, Deconvolution2D
 from keras.layers.pooling import AveragePooling2D
 from keras.layers import Input, merge

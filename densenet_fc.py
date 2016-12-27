@@ -1,5 +1,5 @@
 from keras.models import Model
-from keras.layers.core import Activation, Flatten, Dropout, Activation
+from keras.layers.core import Activation, Flatten, Dropout, Activation, Reshape
 from keras.layers.convolutional import Convolution2D, Deconvolution2D
 from keras.layers.pooling import AveragePooling2D
 from keras.layers import Input, merge
@@ -274,7 +274,12 @@ def create_fc_dense_net(nb_classes, img_dim, nb_dense_block=5, growth_rate=12, n
     x = Convolution2D(nb_classes, 1, 1, activation='linear', border_mode='same', W_regularizer=l2(weight_decay),
                       bias=False)(x)
 
-    x = Flatten()(x)
+    if K.image_dim_ordering() == 'th':
+        channel, row, col = img_dim
+    else:
+        row, col, channel = img_dim
+
+    x = Reshape((row * col, nb_classes))(x)
 
     x = Activation('softmax')(x)
 

@@ -54,7 +54,7 @@ def depth_to_scale_tf(input, scale, channels):
 
 class SubPixelUpscaling(Layer):
 
-    def __init__(self, r, channels, **kwargs):
+    def __init__(self, r=0, channels=0, **kwargs):
         super(SubPixelUpscaling, self).__init__(**kwargs)
 
         self.r = r
@@ -77,3 +77,8 @@ class SubPixelUpscaling(Layer):
         else:
             b, r, c, k = input_shape
             return (b, r * self.r, c * self.r, self.channels)
+    def get_config(self):
+        config = {'r': self.r,
+                  'channels': self.channels}
+        base_config = super(SubPixelUpscaling, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))

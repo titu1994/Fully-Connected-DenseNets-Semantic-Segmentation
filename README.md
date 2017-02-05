@@ -14,3 +14,9 @@ import densenet_fc as dc
 model = dc.create_fc_dense_net(nb_classes=10, img_dim=(3, 224, 224), nb_dense_block=5, growth_rate=12,
                                nb_filter=16, nb_layers=4)
 ```
+
+# Requirements
+Keras 1.2.1+ (only theano backend is working right now).
+Theano (master branch)
+h5py
+

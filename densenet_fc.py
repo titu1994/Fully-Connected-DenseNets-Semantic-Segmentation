@@ -1,6 +1,6 @@
 from keras.models import Model
 from keras.layers.core import Activation, Dropout, Activation, Reshape
-from keras.layers.convolutional import Convolution2D, Deconvolution2D
+from keras.layers.convolutional import Convolution2D, Deconvolution2D, AtrousConvolution2D
 from keras.layers.pooling import AveragePooling2D
 from keras.layers import Input, merge
 from keras.layers.normalization import BatchNormalization
@@ -72,26 +72,30 @@ def transition_down_block(ip, nb_filter, compression=1.0, dropout_rate=None, wei
                       W_regularizer=l2(weight_decay))(x)
     if dropout_rate:
         x = Dropout(dropout_rate)(x)
-    x = AveragePooling2D((2, 2), strides=(2, 2))(x)
+    x = AveragePooling2D((2, 2), strides=(2, 2), border_mode='same')(x)
 
     return x
 
 
-def transition_up_block(ip, nb_filters, type='subpixel', output_shape=None, weight_decay=1E-4):
+def transition_up_block(ip, nb_filters, type='deconv', output_shape=None, weight_decay=1E-4, input_shape=None):
     ''' SubpixelConvolutional Upscaling (factor = 2)
 
     Args:
         ip: keras tensor
         nb_filters: number of layers
-        type: can be 'subpixel' or 'deconv'. Determines type of upsampling performed
+        type: can be 'subpixel', 'deconv', or 'atrous'. Determines type of upsampling performed
         output_shape: required if type = 'deconv'. Output shape of tensor
         weight_decay: weight decay factor
 
     Returns: keras tensor, after applying batch_norm, relu-conv, dropout, maxpool
 
     '''
-
-    if type == 'subpixel':
+    print "tu pre  shape: ", K.int_shape(ip),"nb_filter: ", nb_filters
+    if type == 'atrous':
+        # waiting on https://github.com/fchollet/keras/issues/4018
+        x = AtrousConvolution2D(nb_filters, 3, 3, activation="relu", W_regularizer=l2(weight_decay),
+                        bias=False, atrous_rate=(2,2))(ip)#, input_shape=input_shape#, subsample=(2, 2) # subsample not supported?
+    elif type == 'subpixel':
         x = Convolution2D(nb_filters, 3, 3, activation="relu", border_mode='same', W_regularizer=l2(weight_decay),
                         bias=False)(ip)
         x = SubPixelUpscaling(r=2, channels=int(nb_filters // 4))(x)
@@ -102,6 +106,7 @@ def transition_up_block(ip, nb_filters, type='subpixel', output_shape=None, weig
         x = Deconvolution2D(nb_filters, 3, 3, output_shape, activation='relu', border_mode='same',
                             subsample=(2, 2))(ip)
 
+    print "tu post shape: ", K.int_shape(x)
     return x
 
 
@@ -135,8 +140,8 @@ def dense_block(x, nb_layers, nb_filter, growth_rate, bottleneck=False, dropout_
 
 
 def create_fc_dense_net(nb_classes, img_dim, nb_dense_block=5, growth_rate=12, nb_filter=16, nb_layers=4, upsampling_conv=128,
-                        bottleneck=False, reduction=0.0, dropout_rate=None, weight_decay=1E-4, upscaling_type='subpixel',
-                        verbose=True):
+                        bottleneck=False, reduction=0.0, dropout_rate=None, weight_decay=1E-4, upscaling_type='deconv',
+                        verbose=True, tensor=None, batch_size = None):
     ''' Build the create_dense_net model
 
     Args:
@@ -160,24 +165,15 @@ def create_fc_dense_net(nb_classes, img_dim, nb_dense_block=5, growth_rate=12, n
         reduction: reduction factor of transition blocks. Note : reduction value is inverted to compute compression
         dropout_rate: dropout rate
         weight_decay: weight decay
-        upscaling_type: method of upscaling. Can be 'subpixel' or 'deconv'
+        upscaling_type: method of upscaling. Can be 'subpixel', 'deconv', or 'atrous'
         verbose: print the model type
+        tensor: the input tensor, see keras Input() for details
+        batch_size: the batch size when training
 
     Returns: keras tensor with nb_layers of conv_block appended
 
     '''
-    if K.backend() == 'tensorflow' and upscaling_type == 'deconv':
-        assert len(img_dim) == 4, "If using tensorflow backend with deconvolution type upscaling, \n" \
-                                  "then batch size must also be provided in img_dim as it is required for computing \n" \
-                                  "output shape of the deconvolution layer"
-
-        batch_size = img_dim[0]
-        img_dim = img_dim[1:]
-
-    else:
-        batch_size = None
-
-    model_input = Input(shape=img_dim)
+    model_input = Input(shape=img_dim,tensor=tensor)
 
     concat_axis = 1 if K.image_dim_ordering() == "th" else -1
 
@@ -195,7 +191,7 @@ def create_fc_dense_net(nb_classes, img_dim, nb_dense_block=5, growth_rate=12, n
                                                              "be a positive number divisible by 4 and greater " \
                                                               "than 12"
 
-    assert upscaling_type.lower() in ['subpixel', 'deconv'], "upscaling_type must be either 'subpixel' or " \
+    assert upscaling_type.lower() in ['subpixel', 'deconv', 'atrous'], "upscaling_type must be either 'subpixel' or " \
                                                              "'deconv'"
 
     # layers in each dense block
@@ -241,7 +237,7 @@ def create_fc_dense_net(nb_classes, img_dim, nb_dense_block=5, growth_rate=12, n
         # add transition_block
         x = transition_down_block(x, nb_filter, compression=compression, dropout_rate=dropout_rate,
                                   weight_decay=weight_decay)
-        nb_filter = int(nb_filter * compression)
+        nb_filter = int(nb_filter * compression) # this is calculated inside transition_down_block
 
         # Preserve transition for next skip connection after dense
         skip_connection = x
@@ -257,7 +253,10 @@ def create_fc_dense_net(nb_classes, img_dim, nb_dense_block=5, growth_rate=12, n
 
     # Add dense blocks and transition up block
     for block_idx in range(nb_dense_block):
-        x = transition_up_block(x, nb_filters=upsampling_conv, type=upscaling_type, output_shape=out_shape)
+        if K.image_dim_ordering() != 'th':
+            out_shape[3] = nb_filter
+
+        x = transition_up_block(x, nb_filters=nb_filter, type=upscaling_type, output_shape=out_shape)
 
         if K.image_dim_ordering() == 'th':
             out_shape[2] *= 2
@@ -282,6 +281,8 @@ def create_fc_dense_net(nb_classes, img_dim, nb_dense_block=5, growth_rate=12, n
     x = Reshape((row * col, nb_classes))(x)
 
     x = Activation('softmax')(x)
+
+    x = Reshape((row,col,nb_classes))(x)
 
     densenet = Model(input=model_input, output=x, name="create_dense_net")
 

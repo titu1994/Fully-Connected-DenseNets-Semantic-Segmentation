@@ -20,7 +20,6 @@ def conv_block(ip, nb_filter, bottleneck=False, dropout_rate=None, weight_decay=
         weight_decay: weight decay factor
 
     Returns: keras tensor with batch_norm, relu and convolution2d added (optional bottleneck)
-
     '''
 
     concat_axis = 1 if K.image_dim_ordering() == "th" else -1
@@ -60,7 +59,6 @@ def transition_down_block(ip, nb_filter, compression=1.0, dropout_rate=None, wei
         weight_decay: weight decay factor
 
     Returns: keras tensor, after applying batch_norm, relu-conv, dropout, maxpool
-
     '''
 
     concat_axis = 1 if K.image_dim_ordering() == "th" else -1
@@ -88,13 +86,12 @@ def transition_up_block(ip, nb_filters, type='deconv', output_shape=None, weight
         weight_decay: weight decay factor
 
     Returns: keras tensor, after applying batch_norm, relu-conv, dropout, maxpool
-
     '''
-    print "tu pre  shape: ", K.int_shape(ip),"nb_filter: ", nb_filters
+
     if type == 'atrous':
         # waiting on https://github.com/fchollet/keras/issues/4018
         x = AtrousConvolution2D(nb_filters, 3, 3, activation="relu", W_regularizer=l2(weight_decay),
-                        bias=False, atrous_rate=(2,2))(ip)#, input_shape=input_shape#, subsample=(2, 2) # subsample not supported?
+                        bias=False, atrous_rate=(2, 2))(ip)
     elif type == 'subpixel':
         x = Convolution2D(nb_filters, 3, 3, activation="relu", border_mode='same', W_regularizer=l2(weight_decay),
                         bias=False)(ip)
@@ -106,7 +103,6 @@ def transition_up_block(ip, nb_filters, type='deconv', output_shape=None, weight
         x = Deconvolution2D(nb_filters, 3, 3, output_shape, activation='relu', border_mode='same',
                             subsample=(2, 2))(ip)
 
-    print "tu post shape: ", K.int_shape(x)
     return x
 
 
@@ -123,7 +119,6 @@ def dense_block(x, nb_layers, nb_filter, growth_rate, bottleneck=False, dropout_
         weight_decay: weight decay factor
 
     Returns: keras tensor with nb_layers of conv_block appended
-
     '''
 
     concat_axis = 1 if K.image_dim_ordering() == "th" else -1
@@ -171,8 +166,8 @@ def create_fc_dense_net(nb_classes, img_dim, nb_dense_block=5, growth_rate=12, n
         batch_size: the batch size when training
 
     Returns: keras tensor with nb_layers of conv_block appended
-
     '''
+
     model_input = Input(shape=img_dim,tensor=tensor)
 
     concat_axis = 1 if K.image_dim_ordering() == "th" else -1

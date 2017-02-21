@@ -135,8 +135,8 @@ def dense_block(x, nb_layers, nb_filter, growth_rate, bottleneck=False, dropout_
 
 
 def create_fc_dense_net(nb_classes, img_dim, nb_dense_block=5, growth_rate=12, nb_filter=16, nb_layers=4, upsampling_conv=128,
-                        bottleneck=False, reduction=0.0, dropout_rate=None, weight_decay=1E-4, upscaling_type='deconv',
-                        verbose=True, tensor=None, batch_size = None):
+                        bottleneck=False, reduction=0.0, dropout_rate=None, weight_decay=1E-4, upscaling_type='subpixel',
+                        verbose=True, tensor=None, batch_size=None):
     ''' Build the create_dense_net model
 
     Args:

@@ -28,28 +28,9 @@ def depth_to_scale_tf(input, scale, channels):
     try:
         import tensorflow as tf
     except ImportError:
-        print("Could not import Tensorflow for depth_to_scale operation. Please install Tensorflow or switch to Theano backend")
-        exit()
+        raise ImportError("Could not import Tensorflow for depth_to_scale operation. Please install Tensorflow or switch to Theano backend")
 
-    def _phase_shift(I, r):
-        ''' Function copied as is from https://github.com/Tetrachrome/subpixel/blob/master/subpixel.py'''
-
-        bsize, a, b, c = I.get_shape().as_list()
-        bsize = tf.shape(I)[0]  # Handling Dimension(None) type for undefined batch dim
-        X = tf.reshape(I, (bsize, a, b, r, r))
-        X = tf.transpose(X, (0, 1, 2, 4, 3))  # bsize, a, b, 1, 1
-        X = tf.split(1, a, X)  # a, [bsize, b, r, r]
-        X = tf.concat(2, [tf.squeeze(x) for x in X])  # bsize, b, a*r, r
-        X = tf.split(1, b, X)  # b, [bsize, a*r, r]
-        X = tf.concat(2, [tf.squeeze(x) for x in X])  # bsize, a*r, b*r
-        return tf.reshape(X, (bsize, a * r, b * r, 1))
-
-    if channels > 1:
-        Xc = tf.split(3, channels, input)
-        X = tf.concat(3, [_phase_shift(x, scale) for x in Xc])
-    else:
-        X = _phase_shift(input, scale)
-    return X
+    return tf.depth_to_space(input, scale)
 
 
 class SubPixelUpscaling(Layer):

@@ -11,12 +11,12 @@ Simply import the `densenet_fc.py` script and call the create method:
 ```
 import densenet_fc as dc
 
-model = dc.create_fc_dense_net(nb_classes=10, img_dim=(3, 224, 224), nb_dense_block=5, growth_rate=12,
-                               nb_filter=16, nb_layers=4)
+model = DenseNetFCN((32, 32, 3), nb_dense_block=5, growth_rate=16,
+                        nb_layers_per_block=4, upsampling_type='upsampling', classes=1)
 ```
 
 # Requirements
-Keras 1.2.1+ (only theano backend is working right now).
-Theano (master branch)
+Keras 1.2.2+
+Theano (master branch) / Tensorflow 1.0+
 h5py
 

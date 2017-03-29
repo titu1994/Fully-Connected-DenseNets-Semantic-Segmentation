@@ -16,7 +16,7 @@ model = DenseNetFCN((32, 32, 3), nb_dense_block=5, growth_rate=16,
 ```
 
 # Requirements
-Keras 1.2.2+
+Keras 1.2.2 
 Theano (master branch) / Tensorflow 1.0+
 h5py
 
